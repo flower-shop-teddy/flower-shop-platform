@@ -6,7 +6,7 @@
     <parent>
         <groupId>com.flowershop</groupId>
         <artifactId>flower-shop-parent</artifactId>
-        <version>0.1.0-SNAPSHOT</version>
+        <version>0.2.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>common-lib</artifactId>
@@ -28,6 +28,18 @@
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-tx</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <!-- Các mảnh security dùng chung (package com.flowershop.common.security).
+             Service nào bảo vệ API bằng JWT thì tự khai báo starter này. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.data</groupId>
+            <artifactId>spring-data-commons</artifactId>
             <optional>true</optional>
         </dependency>
     </dependencies>
