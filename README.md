@@ -21,9 +21,20 @@ Phần dùng chung cho mọi service của Flower Shop:
 ## Build & publish
 
 - Local: `mvn install` (cài vào `~/.m2`), hoặc build cả workspace từ repo `flower-shop-workspace`.
-- GitHub: push lên `dev` thì workflow `publish.yml` tự `mvn deploy` bản `-SNAPSHOT` lên GitHub Packages của org.
+- Push `dev`: `publish-snapshot.yml` publish bản `-SNAPSHOT` lên GitHub Packages.
+- Merge `dev → production`: `release.yml` publish bản chính thức `X.Y.Z` + tag `vX.Y.Z`.
+
+## CI dùng chung cho mọi repo
+
+| File | Vai trò |
+|---|---|
+| `.github/actions/setup-maven` | Cài JDK + settings.xml đọc/ghi GitHub Packages bằng `GITHUB_TOKEN` |
+| `.github/workflows/maven-ci.yml` | Build + test (check `ci / build`) |
+| `.github/workflows/service-release.yml` | Release service thành Docker image trên GHCR |
+| `.github/workflows/commit-lint.yml` | Kiểm tra Conventional Commits |
+
+Service gọi bằng `uses: flower-shop-teddy/flower-shop-platform/.github/workflows/<file>@dev`. Sửa ở `dev` của repo này là mọi service áp dụng ngay, nên hãy cẩn thận.
 
 ## Đổi version
 
-Sửa **cả hai** chỗ trong `pom.xml`: `<version>` của project và property `flower-shop-common.version`.
-Sau đó cập nhật version parent trong từng service muốn dùng bản mới.
+Dùng `./set-platform-version.sh <version>` ở repo workspace: script sửa cả `<version>` lẫn property `flower-shop-common.version` (hai chỗ phải luôn bằng nhau, workflow release sẽ kiểm tra), và cập nhật parent của mọi service.

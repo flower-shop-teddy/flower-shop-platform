@@ -1,0 +1,28 @@
+# Mỗi lần push lên dev: publish bản -SNAPSHOT của parent + common-lib lên GitHub Packages,
+# để CI của các service (chạy ở repo khác) lấy được bản mới nhất.
+# Dùng GITHUB_TOKEN do GitHub cấp riêng cho lần chạy này, không cần token cá nhân.
+name: Publish snapshot
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-snapshot
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-maven
+      - name: Build, test & publish SNAPSHOT
+        run: mvn -B -ntp deploy
