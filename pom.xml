@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- Repo flower-shop-platform.
+         File này vừa là PARENT POM cho mọi service (version thư viện, plugin dùng chung),
+         vừa là aggregator build common-lib. Cả hai được publish lên GitHub Packages
+         để repo service khác kéo về như một thư viện bình thường. -->
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.6</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.flowershop</groupId>
+    <artifactId>flower-shop-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>flower-shop-parent</name>
+    <description>Parent POM + thư viện dùng chung của Flower Shop</description>
+
+    <modules>
+        <module>common-lib</module>
+    </modules>
+
+    <properties>
+        <java.version>21</java.version>
+        <spring-cloud.version>2025.0.0</spring-cloud.version>
+        <springdoc.version>2.8.9</springdoc.version>
+        <!-- Ghi đè version mà Spring Boot 3.5.6 chọn sẵn (1.21.3).
+             1.21.3 dùng Docker API cũ, Docker Engine 29+ từ chối -> "Could not find a valid Docker environment".
+             1.21.4 đã sửa lỗi này. Bỏ dòng này khi nâng Spring Boot lên bản đã kèm sẵn version mới. -->
+        <testcontainers.version>1.21.4</testcontainers.version>
+        <!-- Version common-lib mà service dùng. Luôn bằng version của POM này:
+             khi release platform thì sửa cả <version> ở trên lẫn dòng này.
+             (Không dùng ${project.version} vì trong service nó sẽ thành version của service.) -->
+        <flower-shop-common.version>0.1.0-SNAPSHOT</flower-shop-common.version>
+    </properties>
+
+    <!-- Quản lý version tập trung: service KHÔNG tự ghi version thư viện -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.flowershop</groupId>
+                <artifactId>common-lib</artifactId>
+                <version>${flower-shop-common.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+                <version>${springdoc.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <!-- mvn deploy (chạy trong GitHub Actions) đẩy parent + common-lib lên GitHub Packages của org.
+         id "github" khớp với settings.xml mà actions/setup-java tự sinh, dùng GITHUB_TOKEN của workflow. -->
+    <distributionManagement>
+        <repository>
+            <id>github</id>
+            <url>https://maven.pkg.github.com/flower-shop-teddy/flower-shop-platform</url>
+        </repository>
+        <snapshotRepository>
+            <id>github</id>
+            <url>https://maven.pkg.github.com/flower-shop-teddy/flower-shop-platform</url>
+        </snapshotRepository>
+    </distributionManagement>
+</project>

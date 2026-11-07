@@ -1,0 +1,30 @@
+# Mỗi lần push lên dev: build, test rồi publish flower-shop-parent + common-lib lên GitHub Packages của org.
+# Dùng GITHUB_TOKEN do GitHub cấp riêng cho lần chạy này (chỉ có quyền trong org flower-shop-teddy),
+# không cần token cá nhân.
+name: Publish platform
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          # setup-java tự tạo settings.xml với <server id="github"> dùng GITHUB_ACTOR / GITHUB_TOKEN,
+          # khớp với <distributionManagement> trong pom.xml
+      - name: Build & publish
+        run: mvn -B deploy
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
