@@ -1,0 +1,31 @@
+# REUSABLE WORKFLOW: build + test một repo Maven.
+# Service gọi bằng:
+#   jobs:
+#     ci:
+#       uses: flower-shop-teddy/flower-shop-platform/.github/workflows/maven-ci.yml@dev
+# Tên check hiện trên PR: "ci / build" (tên job bên gọi / tên job ở đây).
+name: Maven CI
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        type: string
+        default: '21'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ github.token }}   # setup-maven cần để đọc GitHub Packages
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: flower-shop-teddy/flower-shop-platform/.github/actions/setup-maven@dev
+        with:
+          java-version: ${{ inputs.java-version }}
+
+      # verify = compile + test + đóng gói. Test của catalog dùng Testcontainers:
+      # máy Ubuntu của GitHub có sẵn Docker nên Postgres thật được bật trong lúc test.
+      - name: Build & test
+        run: mvn -B -ntp verify

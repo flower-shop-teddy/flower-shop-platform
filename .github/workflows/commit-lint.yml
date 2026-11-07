@@ -1,0 +1,65 @@
+# REUSABLE WORKFLOW: kiểm tra commit message theo Conventional Commits.
+#   <type>(<scope>)?: <mô tả>        ví dụ:  feat(catalog): thêm API tìm hoa theo giá
+#   type: feat fix docs style refactor perf test build ci chore revert
+#   thêm "!" sau type/scope nếu phá vỡ tương thích:  feat(api)!: đổi format response
+# Bỏ qua: merge commit, commit do nút "Revert" của GitHub tạo ('Revert "..."').
+#
+# Cùng luật với hook githooks/commit-msg ở repo workspace.
+#   - Hook: chặn NGAY lúc git commit trên máy dev (lớp bảo vệ chính).
+#   - Workflow này: báo đỏ trên GitHub khi push lên dev / mở PR vào dev, phòng khi hook chưa cài.
+# KHÔNG đặt làm check bắt buộc cho production: dev cấm force push nên commit sai đã lên dev
+# không sửa được, bắt buộc sẽ khóa release vĩnh viễn.
+# Tên check: "commit-lint / check".
+name: Commit lint
+
+on:
+  workflow_call:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # cần toàn bộ lịch sử để duyệt dải commit
+
+      - name: Kiểm tra commit message
+        # Giá trị từ sự kiện đưa qua env, không nhúng ${{ }} thẳng vào script (tránh chèn lệnh).
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          PATTERN='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._-]+\))?!?: [^ ].{0,98}$'
+
+          if [ "$EVENT" = "pull_request" ]; then
+            RANGE="$PR_BASE..$PR_HEAD"                 # các commit của PR
+          elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            RANGE="$AFTER -1"                          # nhánh mới: chỉ kiểm commit cuối
+          else
+            RANGE="$BEFORE..$AFTER"                    # các commit vừa push
+          fi
+
+          bad=0
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            sha=${line%% *}; subject=${line#* }
+            case "$subject" in 'Revert "'*) continue ;; esac
+            if printf '%s' "$subject" | grep -Eq "$PATTERN"; then
+              echo "✔ $sha $subject"
+            else
+              echo "::error::Commit $sha sai định dạng: \"$subject\""
+              bad=1
+            fi
+          done < <(git log --no-merges --format='%h %s' $RANGE)
+
+          if [ "$bad" -ne 0 ]; then
+            echo
+            echo "Định dạng đúng: <type>(<scope>): <mô tả>   ví dụ: feat(catalog): thêm API tìm hoa theo giá"
+            echo "type hợp lệ: feat fix docs style refactor perf test build ci chore revert"
+            echo "Trên nhánh tính năng (PR vào dev): sửa bằng git commit --amend hoặc git rebase -i rồi push lại."
+            echo "Đã lên dev thì không sửa được (dev cấm force push): hãy cài hook ./install-hooks.sh ở workspace để lần sau bị chặn ngay lúc commit."
+            exit 1
+          fi

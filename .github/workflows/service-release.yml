@@ -1,0 +1,113 @@
+# REUSABLE WORKFLOW: release một service thành Docker image trên GHCR.
+#
+#   dry-run: true   chạy trên PR dev -> production: làm MỌI bước kiểm tra + build image, KHÔNG publish.
+#                   Lỗi gì sẽ lộ ra trước khi merge.
+#   dry-run: false  chạy khi PR đã merge (push vào production): push image + tạo tag + GitHub Release.
+#
+# Version KHÔNG được commit vào production (production chỉ nhận PR). Thay vào đó, workflow
+# đổi version ngay trong máy CI (bỏ -SNAPSHOT), build, publish, rồi gắn tag vX.Y.Z vào commit.
+name: Service release
+
+on:
+  workflow_call:
+    inputs:
+      dry-run:
+        type: boolean
+        required: true
+      java-version:
+        type: string
+        default: '21'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ github.token }}   # Maven đọc GitHub Packages
+      GH_TOKEN: ${{ github.token }}       # lệnh gh tạo Release
+      IMAGE: ghcr.io/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # lấy cả tag để kiểm tra version đã release chưa
+
+      - uses: flower-shop-teddy/flower-shop-platform/.github/actions/setup-maven@dev
+        with:
+          java-version: ${{ inputs.java-version }}
+
+      - name: Tính version release
+        id: ver
+        run: |
+          SNAP=$(mvn -B -q -ntp help:evaluate -Dexpression=project.version -DforceStdout)
+          PARENT_SNAP=$(mvn -B -q -ntp help:evaluate -Dexpression=project.parent.version -DforceStdout)
+          VER=${SNAP%-SNAPSHOT}            # 0.1.0-SNAPSHOT -> 0.1.0
+          PARENT=${PARENT_SNAP%-SNAPSHOT}
+          echo "Service: $SNAP -> $VER | Parent (platform): $PARENT_SNAP -> $PARENT"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "parent=$PARENT" >> "$GITHUB_OUTPUT"
+
+      - name: Chặn release trùng version
+        env:
+          VER: ${{ steps.ver.outputs.version }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/v$VER" >/dev/null; then
+            echo "::error::v$VER đã release rồi. Hãy tăng version trên dev, ví dụ: mvn versions:set -DnewVersion=0.2.0-SNAPSHOT -DgenerateBackupPoms=false"
+            exit 1
+          fi
+
+      - name: Kiểm tra platform đã release version parent
+        env:
+          PARENT: ${{ steps.ver.outputs.parent }}
+        # Chạy ngoài thư mục project để Maven không cần đọc pom.xml của service
+        run: |
+          cd "$RUNNER_TEMP"
+          if ! mvn -B -q -ntp dependency:get -Dartifact=com.flowershop:flower-shop-parent:$PARENT:pom -Dtransitive=false; then
+            echo "::error::Platform $PARENT chưa được release. Hãy merge PR dev -> production của flower-shop-platform trước."
+            exit 1
+          fi
+
+      - name: Đổi sang version release (chỉ trong máy CI, không commit)
+        env:
+          VER: ${{ steps.ver.outputs.version }}
+          PARENT: ${{ steps.ver.outputs.parent }}
+        run: |
+          # Đổi version parent trong khối <parent> (perl: tìm đúng <version> ngay sau artifactId flower-shop-parent)
+          perl -0pi -e 's|(<artifactId>flower-shop-parent</artifactId>\s*<version>)[^<]+(</version>)|${1}$ENV{PARENT}${2}|' pom.xml
+          mvn -B -q -ntp versions:set -DnewVersion="$VER" -DgenerateBackupPoms=false
+          git diff --stat
+
+      - name: Không còn phụ thuộc SNAPSHOT nào
+        run: mvn -B -ntp enforcer:enforce -Denforcer.rules=requireReleaseDeps
+
+      - name: Build & test bản release
+        run: mvn -B -ntp verify
+
+      # Image cho cả máy Intel/AMD (amd64) và Apple Silicon/ARM (arm64)
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Đăng nhập GHCR
+        if: ${{ !inputs.dry-run }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build (và push nếu không phải dry-run) Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ !inputs.dry-run }}
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.ver.outputs.version }}
+            ${{ env.IMAGE }}:latest
+
+      - name: Tạo tag + GitHub Release
+        if: ${{ !inputs.dry-run }}
+        env:
+          VER: ${{ steps.ver.outputs.version }}
+          PARENT: ${{ steps.ver.outputs.parent }}
+        run: |
+          gh release create "v$VER" --target "$GITHUB_SHA" --title "v$VER" --generate-notes \
+            --notes "Docker image: \`$IMAGE:$VER\`  (platform $PARENT)"

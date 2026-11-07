@@ -1,0 +1,73 @@
+# Các bước release CỦA RIÊNG platform (parent + common-lib -> GitHub Packages).
+# Chỉ được gọi từ release.yml trong cùng repo này (2 job: release-check và release).
+name: Platform release steps
+
+on:
+  workflow_call:
+    inputs:
+      dry-run:
+        type: boolean
+        required: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-maven
+
+      - name: Tính version release
+        id: ver
+        run: |
+          SNAP=$(mvn -B -q -ntp help:evaluate -Dexpression=project.version -DforceStdout)
+          PROP=$(mvn -B -q -ntp help:evaluate -Dexpression=flower-shop-common.version -DforceStdout)
+          # Hai chỗ version trong pom.xml phải luôn bằng nhau (xem chú thích trong pom.xml)
+          if [ "$SNAP" != "$PROP" ]; then
+            echo "::error::<version> ($SNAP) khác flower-shop-common.version ($PROP) trong pom.xml. Hãy dùng ./set-platform-version.sh ở workspace."
+            exit 1
+          fi
+          VER=${SNAP%-SNAPSHOT}
+          echo "Platform: $SNAP -> $VER"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+      - name: Chặn release trùng version
+        env:
+          VER: ${{ steps.ver.outputs.version }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/v$VER" >/dev/null; then
+            echo "::error::v$VER đã release rồi. Hãy tăng version trên dev bằng ./set-platform-version.sh <version mới>-SNAPSHOT ở workspace."
+            exit 1
+          fi
+
+      - name: Đổi sang version release (chỉ trong máy CI, không commit)
+        env:
+          VER: ${{ steps.ver.outputs.version }}
+        run: |
+          mvn -B -q -ntp versions:set -DnewVersion="$VER" -DprocessAllModules -DgenerateBackupPoms=false
+          mvn -B -q -ntp versions:set-property -Dproperty=flower-shop-common.version -DnewVersion="$VER" -DgenerateBackupPoms=false
+          git diff --stat
+
+      - name: Không còn phụ thuộc SNAPSHOT nào
+        run: mvn -B -ntp enforcer:enforce -Denforcer.rules=requireReleaseDeps
+
+      - name: Build & test (dry-run)
+        if: ${{ inputs.dry-run }}
+        run: mvn -B -ntp verify
+
+      - name: Publish lên GitHub Packages
+        if: ${{ !inputs.dry-run }}
+        run: mvn -B -ntp deploy
+
+      - name: Tạo tag + GitHub Release
+        if: ${{ !inputs.dry-run }}
+        env:
+          VER: ${{ steps.ver.outputs.version }}
+        run: |
+          gh release create "v$VER" --target "$GITHUB_SHA" --title "v$VER" --generate-notes \
+            --notes "Maven: \`com.flowershop:flower-shop-parent:$VER\`, \`com.flowershop:common-lib:$VER\`"

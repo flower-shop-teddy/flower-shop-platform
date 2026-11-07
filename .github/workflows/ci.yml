@@ -1,0 +1,21 @@
+# CI của platform: build + test, và kiểm tra commit message.
+name: CI
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev, production]
+
+jobs:
+  ci:
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/maven-ci.yml
+
+  commit-lint:
+    if: github.event_name == 'push' || github.base_ref == 'dev'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/commit-lint.yml

@@ -1,0 +1,35 @@
+# Release platform:
+#   PR dev -> production  : job release-check (dry-run) -> lộ lỗi trước khi merge
+#   merge vào production  : job release -> publish parent + common-lib X.Y.Z, tag vX.Y.Z
+# Hai job tách riêng để job chạy trên PR chỉ có quyền ĐỌC.
+name: Release
+
+on:
+  pull_request:
+    branches: [production]
+  push:
+    branches: [production]
+
+# Không bao giờ chạy 2 lần release cùng lúc; lần sau đợi lần trước xong
+concurrency:
+  group: release-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  release-check:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/platform-release.yml
+    with:
+      dry-run: true
+
+  release:
+    if: github.event_name == 'push'
+    permissions:
+      contents: write   # tạo tag + GitHub Release
+      packages: write   # publish lên GitHub Packages
+    uses: ./.github/workflows/platform-release.yml
+    with:
+      dry-run: false
