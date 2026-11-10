@@ -5,6 +5,8 @@ import org.springframework.http.HttpStatus;
 public enum CommonErrorCode implements ErrorCode {
     VALIDATION_FAILED("COM-400-001", HttpStatus.BAD_REQUEST, "Dữ liệu không hợp lệ"),
     MALFORMED_REQUEST("COM-400-002", HttpStatus.BAD_REQUEST, "Request sai định dạng"),
+    UNAUTHORIZED("COM-401-001", HttpStatus.UNAUTHORIZED, "Chưa đăng nhập hoặc phiên đăng nhập đã hết hạn"),
+    FORBIDDEN("COM-403-001", HttpStatus.FORBIDDEN, "Bạn không có quyền thực hiện thao tác này"),
     RESOURCE_NOT_FOUND("COM-404-001", HttpStatus.NOT_FOUND, "Không tìm thấy đường dẫn"),
     CONCURRENT_MODIFICATION("COM-409-001", HttpStatus.CONFLICT,
             "Dữ liệu đã bị người khác thay đổi, vui lòng tải lại và thử lại"),

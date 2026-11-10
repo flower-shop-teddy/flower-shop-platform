@@ -5,7 +5,7 @@ Phần dùng chung cho mọi service của Flower Shop:
 | Artifact | Vai trò |
 |---|---|
 | `com.flowershop:flower-shop-parent` (`pom.xml`) | Parent POM: version Spring Boot, Spring Cloud, springdoc, testcontainers, cấu hình Lombok |
-| `com.flowershop:common-lib` | Response chuẩn, mã lỗi, xử lý lỗi, correlation id, che dữ liệu. **Không chứa logic nghiệp vụ.** |
+| `com.flowershop:common-lib` | Response chuẩn, mã lỗi, xử lý lỗi, correlation id, che dữ liệu, mảnh security dùng chung, client gọi service khác (`client/ServiceClientFactory`). **Không chứa logic nghiệp vụ.** |
 
 ## Dùng trong service
 

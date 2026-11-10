@@ -18,7 +18,7 @@
 
     <groupId>com.flowershop</groupId>
     <artifactId>flower-shop-parent</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.2.0-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>flower-shop-parent</name>
     <description>Parent POM + thư viện dùng chung của Flower Shop</description>
@@ -38,7 +38,7 @@
         <!-- Version common-lib mà service dùng. Luôn bằng version của POM này:
              khi release platform thì sửa cả <version> ở trên lẫn dòng này.
              (Không dùng ${project.version} vì trong service nó sẽ thành version của service.) -->
-        <flower-shop-common.version>0.1.0-SNAPSHOT</flower-shop-common.version>
+        <flower-shop-common.version>0.2.0-SNAPSHOT</flower-shop-common.version>
     </properties>
 
     <!-- Quản lý version tập trung: service KHÔNG tự ghi version thư viện -->
