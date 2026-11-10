@@ -39,6 +39,7 @@ public final class ServiceTokenClient implements Supplier<String> {
             new ParameterizedTypeReference<>() {
             };
 
+    private final ServiceClientFactory factory;
     private final RestClient restClient;
     private final String service;
     private final String clientId;
@@ -48,6 +49,7 @@ public final class ServiceTokenClient implements Supplier<String> {
 
     public ServiceTokenClient(ServiceClientFactory factory, ServiceEndpoint identity, String clientId,
                               String clientSecret, Clock clock) {
+        this.factory = factory;
         this.restClient = factory.restClient(identity, null);   // chưa có token: đây chính là chỗ xin token
         this.service = identity.name();
         this.clientId = Objects.requireNonNull(clientId, "clientId");
@@ -62,7 +64,8 @@ public final class ServiceTokenClient implements Supplier<String> {
             synchronized (this) {
                 token = cached;
                 if (token == null || !clock.instant().isBefore(token.renewAt())) {
-                    token = fetch();
+                    // Xin token gọi lại nhiều lần vẫn an toàn (mỗi lần một token mới): được thử lại, có circuit breaker
+                    token = factory.call(service, true, this::fetch);
                     cached = token;
                 }
             }

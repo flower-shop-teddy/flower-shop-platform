@@ -6,7 +6,7 @@
     <parent>
         <groupId>com.flowershop</groupId>
         <artifactId>flower-shop-parent</artifactId>
-        <version>0.2.0-SNAPSHOT</version>
+        <version>0.3.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>common-lib</artifactId>
@@ -41,6 +41,17 @@
             <groupId>org.springframework.data</groupId>
             <artifactId>spring-data-commons</artifactId>
             <optional>true</optional>
+        </dependency>
+
+        <!-- Circuit breaker + retry cho ServiceClientFactory. Chỉ dùng core (không cần starter/AOP):
+             cấu hình bằng code ở một chỗ, service nào dùng ServiceClientFactory là có ngay. Version do Spring Cloud BOM quản lý. -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-circuitbreaker</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-retry</artifactId>
         </dependency>
 
         <dependency>
