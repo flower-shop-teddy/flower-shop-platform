@@ -8,13 +8,14 @@ import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.support.RestClientAdapter;
 import org.springframework.web.service.invoker.HttpServiceProxyFactory;
 
 import java.io.IOException;
+import java.net.http.HttpClient;
 import java.util.function.Supplier;
 
 /**
@@ -58,8 +59,10 @@ public final class ServiceClientFactory {
 
     /** Khi cần dùng thẳng RestClient thay vì interface. Lỗi HTTP và lỗi kết nối vẫn là {@link RemoteServiceException}. */
     public RestClient restClient(ServiceEndpoint endpoint, Supplier<String> token) {
-        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(endpoint.connectTimeout());
+        // java.net.http.HttpClient thay vì HttpURLConnection (SimpleClientHttpRequestFactory): HttpURLConnection
+        // xử lý riêng response 401 và làm mất body lỗi, nên không đọc được mã lỗi (vd IDN-401-003).
+        HttpClient httpClient = HttpClient.newBuilder().connectTimeout(endpoint.connectTimeout()).build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
         requestFactory.setReadTimeout(endpoint.readTimeout());
 
         return builder.clone()
