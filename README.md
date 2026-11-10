@@ -5,7 +5,7 @@ Phần dùng chung cho mọi service của Flower Shop:
 | Artifact | Vai trò |
 |---|---|
 | `com.flowershop:flower-shop-parent` (`pom.xml`) | Parent POM: version Spring Boot, Spring Cloud, springdoc, testcontainers, cấu hình Lombok |
-| `com.flowershop:common-lib` | Response chuẩn, mã lỗi, xử lý lỗi, correlation id, che dữ liệu, mảnh security dùng chung, client gọi service khác (`client/ServiceClientFactory`). **Không chứa logic nghiệp vụ.** |
+| `com.flowershop:common-lib` | Response chuẩn, mã lỗi, xử lý lỗi, correlation id, che dữ liệu, mảnh security dùng chung, client gọi service khác (`client/ServiceClientFactory`: timeout, token, correlation id, circuit breaker + retry Resilience4j, `@Idempotent`). **Không chứa logic nghiệp vụ.** |
 
 ## Dùng trong service
 
@@ -38,3 +38,27 @@ Service gọi bằng `uses: flower-shop-teddy/flower-shop-platform/.github/workf
 ## Đổi version
 
 Dùng `./set-platform-version.sh <version>` ở repo workspace: script sửa cả `<version>` lẫn property `flower-shop-common.version` (hai chỗ phải luôn bằng nhau, workflow release sẽ kiểm tra), và cập nhật parent của mọi service.
+
+## Gọi service khác (`com.flowershop.common.client`)
+
+```java
+interface InventoryApi {
+    @GetExchange("/api/v1/inventory/stock")      // GET: tự thử lại khi service đích chập chờn
+    ApiResponse<Stock> stock(@RequestParam String sku);
+
+    @Idempotent                                   // POST idempotent: được thử lại
+    @PostExchange("/internal/v1/reservations")
+    ApiResponse<Reservation> reserve(@RequestBody ReserveBody body);
+}
+InventoryApi api = factory.create(InventoryApi.class, endpoint, serviceTokenClient);
+```
+
+| Tình huống | Kết quả |
+|---|---|
+| Không kết nối được / timeout / 502-503-504, lời gọi idempotent | Thử lại tối đa 3 lần (chờ ~200ms, ~400ms) |
+| Lời gọi POST không có `@Idempotent` | Không bao giờ thử lại (có thể tạo trùng) |
+| ≥50% của 20 lời gọi gần nhất là sự cố (cần ≥10 lời gọi) | Ngắt mạch 15s: trả `RemoteServiceException` ngay, không gửi request |
+| Lỗi nghiệp vụ 4xx (409 hết hàng, 404...) | Không thử lại, không tính là sự cố |
+| Xin token ở identity lỗi khi đang gọi service X | Không tính là sự cố của X |
+
+Đổi ngưỡng: `new ServiceClientFactory(builder, objectMapper, new ResilienceSettings(...))`.

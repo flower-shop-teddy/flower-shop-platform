@@ -5,6 +5,7 @@ import com.flowershop.common.web.CorrelationId;
 import org.aopalliance.intercept.MethodInterceptor;
 import org.slf4j.MDC;
 import org.springframework.aop.framework.ProxyFactory;
+import org.springframework.aop.support.AopUtils;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
@@ -12,9 +13,11 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.support.RestClientAdapter;
+import org.springframework.web.service.annotation.GetExchange;
 import org.springframework.web.service.invoker.HttpServiceProxyFactory;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.net.http.HttpClient;
 import java.util.function.Supplier;
 
@@ -25,6 +28,7 @@ import java.util.function.Supplier;
  *   <li>header {@code X-Correlation-Id} lấy từ MDC: log của hai service nối được với nhau</li>
  *   <li>header {@code Authorization: Bearer} (zero trust: service đích không tin ai không có token)</li>
  *   <li>mọi lỗi đổi thành {@link RemoteServiceException}, kèm mã lỗi gốc của service đích</li>
+ *   <li>circuit breaker theo service đích; tự thử lại lời gọi GET và lời gọi có {@link Idempotent}</li>
  * </ul>
  * Khai báo client dạng interface ({@code @HttpExchange}, giống OpenFeign nhưng có sẵn trong Spring):
  * <pre>
@@ -41,10 +45,29 @@ public final class ServiceClientFactory {
 
     private final RestClient.Builder builder;
     private final ObjectMapper objectMapper;
+    private final ServiceResilience resilience;
 
     public ServiceClientFactory(RestClient.Builder builder, ObjectMapper objectMapper) {
+        this(builder, objectMapper, ResilienceSettings.defaults());
+    }
+
+    public ServiceClientFactory(RestClient.Builder builder, ObjectMapper objectMapper, ResilienceSettings settings) {
         this.builder = builder;
         this.objectMapper = objectMapper;
+        this.resilience = new ServiceResilience(settings);
+    }
+
+    /**
+     * Chạy một lời gọi tới {@code service} qua circuit breaker (và retry nếu {@code idempotent}).
+     * Client tạo bởi {@link #create} đã tự làm việc này; dùng trực tiếp khi gọi bằng {@link #restClient}.
+     */
+    public <T> T call(String service, boolean idempotent, Supplier<T> action) {
+        return resilience.call(service, idempotent, action);
+    }
+
+    /** Trạng thái circuit breaker của một service đích (CLOSED, OPEN, HALF_OPEN...), để giám sát / test. */
+    public String circuitState(String service) {
+        return resilience.state(service).name();
     }
 
     /**
@@ -54,7 +77,7 @@ public final class ServiceClientFactory {
         T client = HttpServiceProxyFactory.builderFor(RestClientAdapter.create(restClient(endpoint, token)))
                 .build()
                 .createClient(api);
-        return wrapUnexpectedErrors(api, client, endpoint.name());
+        return wrapWithResilience(api, client, endpoint.name());
     }
 
     /** Khi cần dùng thẳng RestClient thay vì interface. Lỗi HTTP và lỗi kết nối vẫn là {@link RemoteServiceException}. */
@@ -110,22 +133,39 @@ public final class ServiceClientFactory {
     }
 
     /**
-     * Lưới an toàn: lỗi còn sót của RestClient (vd đứt kết nối khi đang đọc body, body sai format)
+     * Mỗi method của interface: circuit breaker theo service đích, thử lại nếu là GET hoặc có {@link Idempotent}.
+     * Thêm lưới an toàn: lỗi còn sót của RestClient (vd đứt kết nối khi đang đọc body, body sai format)
      * cũng thành {@link RemoteServiceException}, để code gọi chỉ phải bắt một loại lỗi.
      */
     @SuppressWarnings("unchecked")
-    private static <T> T wrapUnexpectedErrors(Class<T> api, T target, String service) {
+    private <T> T wrapWithResilience(Class<T> api, T target, String service) {
         // ProxyFactory (Spring AOP) thay vì java.lang.reflect.Proxy: gọi được cả interface package-private
         // khai báo ở package của service (reflection thuần bị chặn IllegalAccessException).
         ProxyFactory proxy = new ProxyFactory(target);
         proxy.addInterface(api);
         proxy.addAdvice((MethodInterceptor) invocation -> {
-            try {
-                return invocation.proceed();
-            } catch (RestClientException e) {
-                throw RemoteServiceException.unavailable(service, e);
+            Method method = invocation.getMethod();
+            if (method.getDeclaringClass() == Object.class) {
+                return invocation.proceed();   // toString, equals...: không phải lời gọi mạng
             }
+            boolean idempotent = method.isAnnotationPresent(GetExchange.class)
+                    || method.isAnnotationPresent(Idempotent.class);
+            Object[] args = invocation.getArguments();
+            return resilience.call(service, idempotent, () -> invokeOnce(target, method, args, service));
         });
         return (T) proxy.getProxy(api.getClassLoader());
+    }
+
+    /** Một lần gọi thật (retry gọi lại hàm này). */
+    private static Object invokeOnce(Object target, Method method, Object[] args, String service) {
+        try {
+            return AopUtils.invokeJoinpointUsingReflection(target, method, args);
+        } catch (RestClientException e) {
+            throw RemoteServiceException.unavailable(service, e);
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Throwable e) {
+            throw new IllegalStateException(e);
+        }
     }
 }
