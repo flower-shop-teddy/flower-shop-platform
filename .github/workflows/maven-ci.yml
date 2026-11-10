@@ -27,5 +27,8 @@ jobs:
 
       # verify = compile + test + đóng gói. Test của catalog dùng Testcontainers:
       # máy Ubuntu của GitHub có sẵn Docker nên Postgres thật được bật trong lúc test.
+      # -U: luôn hỏi lại GitHub Packages bản SNAPSHOT mới nhất của parent/common-lib.
+      # Không có -U, Maven dùng bản SNAPSHOT nằm trong cache ~/.m2 (setup-java cache) tới hết ngày,
+      # nên platform vừa thêm class mới thì CI của service vẫn báo "package does not exist".
       - name: Build & test
-        run: mvn -B -ntp verify
+        run: mvn -B -ntp -U verify
